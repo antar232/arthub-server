@@ -1,72 +1,3 @@
-// const express = require("express");
-// const cors = require("cors");
-// const multer = require("multer");
-// const { MongoClient, ServerApiVersion } = require("mongodb");
-// require("dotenv").config();
-
-// const app = express();
-// const port = 5000;
-
-// app.use(cors({
-//     origin: "*", // সব সোর্স থেকে রিকোয়েস্ট অ্যালাউ করুন
-//     methods: ["GET", "POST", "PUT", "DELETE"],
-//     credentials: true
-// }));
-// app.use(express.json());
-
-// const upload = multer({ dest: "uploads/" });
-
-// const uri = process.env.MONGODB_URL;
-// const client = new MongoClient(uri, {
-//   serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
-// });
-
-// let db;
-
-// async function connectDB() {
-//   try {
-//     await client.connect();
-//     db = client.db("arthub_db");
-//     console.log("Successfully connected to MongoDB!");
-//   } catch (err) {
-//     console.error("Database Connection Error:", err);
-//   }
-// }
-
-// connectDB();
-
-// // POST API
-// app.post("/api/artwork", upload.single("image"), async (req, res) => {
-//   try {
-
-//     if (!db) {
-//       return res.status(500).send({ message: "Database not connected" });
-//     }
-
-//     const { title, price, category, description } = req.body;
-//     const file = req.file;
-
-//     const artworkData = {
-//       title,
-//       price: parseFloat(price),
-//       category,
-//       description,
-//       imageUrl: file ? `/uploads/${file.filename}` : null,
-//       createdAt: new Date(),
-//     };
-
-//     const result = await db.collection("artworks").insertOne(artworkData);
-//     res.status(201).send(result);
-//   } catch (error) {
-//     console.error("Insert Error:", error);
-//     res.status(500).send({ message: "Failed to save artwork" });
-//   }
-// });
-
-// app.listen(port, () => {
-//   console.log(`Server running on port ${port}`);
-// });
-
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
@@ -110,7 +41,6 @@ async function connectDB() {
     console.error("Database Connection Error:", err);
   }
 }
-
 connectDB();
 
 // 1. GET: সব আর্টওয়ার্ক পাওয়ার জন্য
@@ -184,6 +114,41 @@ app.delete("/api/artwork/:id", async (req, res) => {
   }
 });
 
+
+app.put("/api/user/update/:id", async (req, res) => {
+  const userId = req.params.id;
+  const { name, email, oldName } = req.body; // ফ্রন্টএন্ড থেকে 'oldName' পাঠাতে হবে
+
+  try {
+    let queryId;
+    try { queryId = new ObjectId(userId); } catch (e) { queryId = userId; }
+
+    // ১. ইউজার কালেকশনে নাম আপডেট
+    const userResult = await db.collection("users").updateOne(
+      { _id: queryId },
+      { $set: { name, email } }
+    );
+
+    if (userResult.matchedCount === 0) {
+      return res.status(404).json({ message: "User not found!" });
+    }
+
+    // ২. যদি নাম পরিবর্তন হয়ে থাকে, তবে আর্টওয়ার্ক কালেকশনে সব আর্ট আপডেট করুন
+    if (oldName && oldName !== name) {
+      await db.collection("artworks").updateMany(
+        { artistName: oldName }, // পুরনো নাম দিয়ে খুঁজুন
+        { $set: { artistName: name } } // নতুন নাম সেট করুন
+      );
+      console.log(`Updated artworks for artist: ${oldName} to ${name}`);
+    }
+
+    return res.status(200).json({ message: "Profile and Artworks updated successfully" });
+
+  } catch (error) {
+    console.error("Backend Error:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
