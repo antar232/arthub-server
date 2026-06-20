@@ -16,7 +16,12 @@ app.use(
 );
 app.use(express.json());
 
-// ছবি দেখার জন্য স্ট্যাটিক ফোল্ডার
+app.get("/api/debug-user/:id", async (req, res) => {
+  const id = req.params.id;
+  const user = await db.collection("user").findOne({ _id: new ObjectId(id) });
+  res.json({ found: !!user, user });
+});
+
 app.use("/uploads", express.static("uploads"));
 
 const upload = multer({ dest: "uploads/" });
@@ -35,7 +40,7 @@ let db;
 async function connectDB() {
   try {
     await client.connect();
-    db = client.db("arthub_db");
+    db = client.db("arthub");
     console.log("Successfully connected to MongoDB!");
   } catch (err) {
     console.error("Database Connection Error:", err);
@@ -43,7 +48,7 @@ async function connectDB() {
 }
 connectDB();
 
-// 1. GET: সব আর্টওয়ার্ক পাওয়ার জন্য
+// 1. GET: 
 app.get("/api/artwork", async (req, res) => {
   try {
     const artworks = await db.collection("artworks").find().toArray();
@@ -53,7 +58,7 @@ app.get("/api/artwork", async (req, res) => {
   }
 });
 
-// 2. POST: আর্টওয়ার্ক সেভ করার জন্য
+// 2. POST: 
 app.post("/api/artwork", upload.single("image"), async (req, res) => {
   try {
     const { title, price, category, description, artistName } = req.body; // artistName যোগ করুন
@@ -114,41 +119,76 @@ app.delete("/api/artwork/:id", async (req, res) => {
   }
 });
 
+// comment 
+app.post("/api/artwork/comment/:id", async (req, res) => {
+  const { id } = req.params;
+  const { user, comment } = req.body;
+
+  try {
+    const result = await db
+      .collection("artworks")
+      .updateOne(
+        { _id: new ObjectId(id) },
+        { $push: { comments: { user, comment, date: new Date() } } },
+      );
+    res.status(200).json({ message: "Comment added successfully!" });
+  } catch (error) {
+    res.status(500).json({ message: "Error adding comment" });
+  }
+});
+//comment delete
+app.delete("/api/artwork/comment/:artworkId/:commentIndex", async (req, res) => {
+    const { artworkId, commentIndex } = req.params;
+    
+    try {
+       
+        await db.collection("artworks").updateOne(
+            { _id: new ObjectId(artworkId) },
+            { $unset: { [`comments.${commentIndex}`]: 1 } }
+        );
+       
+        await db.collection("artworks").updateOne(
+            { _id: new ObjectId(artworkId) },
+            { $pull: { comments: null } }
+        );
+        res.status(200).json({ message: "Comment deleted" });
+    } catch (error) {
+        res.status(500).json({ message: "Error deleting" });
+    }
+});
 
 app.put("/api/user/update/:id", async (req, res) => {
   const userId = req.params.id;
-  const { name, email, oldName } = req.body; // ফ্রন্টএন্ড থেকে 'oldName' পাঠাতে হবে
+  const { name, email, oldName } = req.body;
+
+  console.log("Updating User ID:", userId);
+  console.log("Data Received:", { name, email, oldName });
 
   try {
-    let queryId;
-    try { queryId = new ObjectId(userId); } catch (e) { queryId = userId; }
-
-    // ১. ইউজার কালেকশনে নাম আপডেট
-    const userResult = await db.collection("users").updateOne(
-      { _id: queryId },
-      { $set: { name, email } }
-    );
+    const userResult = await db
+      .collection("user")
+      .updateOne(
+        { _id: new ObjectId(userId) },
+        { $set: { name: name, email: email, updatedAt: new Date() } },
+      );
 
     if (userResult.matchedCount === 0) {
       return res.status(404).json({ message: "User not found!" });
     }
-
-    // ২. যদি নাম পরিবর্তন হয়ে থাকে, তবে আর্টওয়ার্ক কালেকশনে সব আর্ট আপডেট করুন
     if (oldName && oldName !== name) {
-      await db.collection("artworks").updateMany(
-        { artistName: oldName }, // পুরনো নাম দিয়ে খুঁজুন
-        { $set: { artistName: name } } // নতুন নাম সেট করুন
-      );
-      console.log(`Updated artworks for artist: ${oldName} to ${name}`);
+      const artResult = await db
+        .collection("artworks")
+        .updateMany({ artistName: oldName }, { $set: { artistName: name } });
+      console.log(`Updated ${artResult.modifiedCount} artworks`);
     }
 
-    return res.status(200).json({ message: "Profile and Artworks updated successfully" });
-
+    return res.status(200).json({ message: "Profile updated successfully" });
   } catch (error) {
     console.error("Backend Error:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 });
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
